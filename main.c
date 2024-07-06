@@ -1,26 +1,6 @@
-#include <ctype.h>
-#include <stdarg.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "9cc.h"
 
-//トークンの種類
-typedef enum {
-	TK_RESERVED, //記号トークン
-	TK_NUM,      //整数トークン
-	TK_EOF,      //入力の終了
-} TokenKind;
-
-typedef struct Token Token;
-
-struct Token {
-	TokenKind kind;
-	Token *next;
-	int val;
-	char *str;
-};
-
+//トークン
 Token *token;
 
 //入力文字列
@@ -41,8 +21,10 @@ void error_at(char *loc, char *fmt, ...) {
 }
 
 //tokenの種類が指定したものであれば真を返して次へ進み、そうでなければ偽を返す
-bool consume(char op) {
-	if (token->kind != TK_RESERVED || token->str[0] != op) {
+bool consume(char *op) {
+	if (token->kind != TK_RESERVED || 
+		strlen(op) != token->len ||
+		memcmp(token->str, op, token->len)) {
 		return false;
 	}
 	token = token->next;
@@ -50,8 +32,10 @@ bool consume(char op) {
 }
 
 //tokenの種類が指定したものであれば次へ進み、そうでなければエラーを返す
-void expect(char op) {
-	if (token->kind != TK_RESERVED || token->str[0] != op) 
+void expect(char *op) {
+	if (token->kind != TK_RESERVED || 
+		strlen(op) != token->len ||
+		memcmp(token->str, op, token->len)) 
 		error_at(token->str, "'%c'ではありません", op);
 	token = token->next;
 }
@@ -69,16 +53,21 @@ bool at_EOF() {
 	return token->kind == TK_EOF;
 }
 
+static bool startswith(char *p, char *q) {
+  return strncmp(p, q, strlen(q)) == 0;
+}
+
 //新しいトークンを作成して現在のトークンcurにつなげる
-Token *new_token(TokenKind kind, Token *cur, char *str) {
+Token *new_token(TokenKind kind, Token *cur, char *str, int len) {
 	Token *tok = calloc(1, sizeof(Token));
 	tok->kind = kind;
 	tok->str = str;
+	tok->len = len;
 	cur->next = tok;
 	return tok;
 } 
 
-//入力文字列pをトークナイズする
+//入力文字列pをトークナイズして文字、数字の連結リストにする
 Token *tokenize(char *p) {
 	Token head;
 	head.next = NULL;
@@ -91,13 +80,20 @@ Token *tokenize(char *p) {
 			continue;
 		}
 
-		if (*p == '+' || *p == '-') {
-			cur = new_token(TK_RESERVED, cur, p++);
+		if (strchr("+-*/()<>", *p)) {
+			cur = new_token(TK_RESERVED, cur, p++, 1);
+			continue;
+		}
+
+		if (startswith(p, "==") || startswith(p, "!=") ||
+			startswith(p, "<=") || startswith(p, ">=")) {
+			cur = new_token(TK_RESERVED, cur, p, 2);
+			p = p + 2;
 			continue;
 		}
 
 		if (isdigit(*p)) {
-			cur = new_token(TK_NUM, cur, p);
+			cur = new_token(TK_NUM, cur, p, 1);
 			cur->val = strtol(p, &p, 10);
 			continue;
 		}
@@ -105,7 +101,7 @@ Token *tokenize(char *p) {
 		error_at(p++, "トークナイズできません");
 	}
 
-	cur = new_token(TK_EOF, cur, p);
+	cur = new_token(TK_EOF, cur, p, 1);
 	return head.next;
 }
 
@@ -117,23 +113,15 @@ int main(int argc, char **argv) {
 
 	user_input = argv[1];
 	token = tokenize(argv[1]);
+	Node *node = expr();
 
 	printf(".intel_syntax noprefix\n");
 	printf(".globl main\n");
 	printf("main:\n");
 
-	printf("	mov rax, %d\n", expect_number());
+	gen(node);
 
-	while (!at_EOF()) {
-		if (consume('+')) {
-			printf("	add rax, %d\n", expect_number());
-			continue;
-		}
-
-		expect('-');
-		printf("	sub rax, %d\n", expect_number());
-	}
-
+	printf("	pop rax\n");
 	printf("	ret\n");
 	return 0;
 } 
