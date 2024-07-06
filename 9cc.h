@@ -45,6 +45,7 @@ struct Token {
 	int len;
 };
 
+//関数プロトタイプを宣言
 Node *expr();
 Node *equality();
 Node *relational();
@@ -52,3 +53,11 @@ Node *add();
 Node *mul();
 Node *unary();
 Node *primary();
+
+Token *tokenize(char *p);
+void error_at(char *loc, char *fmt, ...);
+bool consume(char *op);
+void expect(char *op);
+int expect_number();
+bool at_EOF();
+void gen(Node *node);
